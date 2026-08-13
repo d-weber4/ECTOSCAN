@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ECTOSCAN — Entity Origin Analyzer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Share+Tech+Mono&family=EB+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root{
+    --void:#07060a;
+    --panel:#100c17;
+    --panel-2:#160f22;
+    --line:#33284d;
+    --ecto:#69f2a8;
+    --ecto-dim:#2f7a56;
+    --amber:#dd9a44;
+    --parchment:#ece3d1;
+    --dim:#9a8bbf;
+    --blood:#b23b3b;
+    --danger-glow: rgba(178,59,59,0.35);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse at 50% -10%, rgba(105,242,168,0.06), transparent 60%),
+      radial-gradient(ellipse at 90% 110%, rgba(178,59,59,0.08), transparent 55%),
+      var(--void);
+    color:var(--parchment);
+    font-family:'EB Garamond', serif;
+    min-height:100vh;
+    padding:28px 16px 60px;
+    position:relative;
+    overflow-x:hidden;
+  }
+  body::before{
+    content:"";
+    position:fixed; inset:0; pointer-events:none; z-index:50;
+    background:repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,0.018) 0px,
+      rgba(255,255,255,0.018) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    mix-blend-mode:overlay;
+  }
+  @keyframes flicker{
+    0%,100%{opacity:1;}
+    92%{opacity:1;}
+    93%{opacity:0.55;}
+    94%{opacity:1;}
+    96%{opacity:0.7;}
+    97%{opacity:1;}
+  }
+  .device{
+    max-width:760px;
+    margin:0 auto;
+    background:linear-gradient(180deg, var(--panel), var(--panel-2));
+    border:1px solid var(--line);
+    border-radius:10px;
+    box-shadow:0 0 0 1px rgba(0,0,0,0.4), 0 30px 80px -20px rgba(0,0,0,0.8), 0 0 60px -20px rgba(105,242,168,0.08);
+    overflow:hidden;
+  }
+  .device-header{
+    padding:26px 28px 20px;
+    border-bottom:1px solid var(--line);
+    background:
+      linear-gradient(180deg, rgba(105,242,168,0.05), transparent);
+    text-align:center;
+  }
+  .brand-glyph{
+    display:block;
+    font-size:22px;
+    color:var(--ecto);
+    text-shadow:0 0 12px rgba(105,242,168,0.7);
+    animation:flicker 6s infinite;
+  }
+  .device-header h1{
+    font-family:'Cinzel', serif;
+    font-weight:900;
+    letter-spacing:0.28em;
+    font-size:clamp(28px,6vw,40px);
+    margin:6px 0 4px;
+    color:var(--parchment);
+    text-shadow:0 0 18px rgba(105,242,168,0.25);
+    animation:flicker 7s infinite;
+  }
+  .brand-sub{
+    font-family:'Share Tech Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.18em;
+    color:var(--dim);
+    text-transform:uppercase;
+  }
+  .input-console{
+    padding:26px 28px;
+    border-bottom:1px solid var(--line);
+  }
+  .input-console label{
+    display:block;
+    font-family:'Share Tech Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.18em;
+    color:var(--ecto);
+    margin-bottom:10px;
+  }
+  .input-row{
+    display:flex;
+    gap:10px;
+  }
+  #ghostName{
+    flex:1;
+    background:var(--void);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:14px 16px;
+    color:var(--parchment);
+    font-family:'EB Garamond', serif;
+    font-size:18px;
+    font-style:italic;
+    outline:none;
+    transition:border-color .2s, box-shadow .2s;
+  }
+  #ghostName:focus{
+    border-color:var(--ecto-dim);
+    box-shadow:0 0 0 3px rgba(105,242,168,0.12);
+  }
+  #ghostName::placeholder{color:#584d75;}
+  #scanBtn{
+    font-family:'Share Tech Mono', monospace;
+    letter-spacing:0.14em;
+    font-size:13px;
+    background:transparent;
+    border:1px solid var(--ecto-dim);
+    color:var(--ecto);
+    border-radius:6px;
+    padding:0 22px;
+    cursor:pointer;
+    transition:background .2s, color .2s, box-shadow .2s;
+  }
+  #scanBtn:hover{
+    background:rgba(105,242,168,0.1);
+    box-shadow:0 0 18px rgba(105,242,168,0.25);
+  }
+  #scanBtn:disabled{opacity:0.4; cursor:not-allowed;}
+  .hint{
+    margin:10px 2px 0;
+    font-size:13px;
+    color:var(--dim);
+    font-style:italic;
+  }
+  .hidden{display:none !important;}
+
+  /* LOADING */
+  .loading-console{
+    padding:50px 28px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:18px;
+  }
+  .radar{
+    width:110px;height:110px;
+    border-radius:50%;
+    border:1px solid var(--line);
+    position:relative;
+    overflow:hidden;
+    background:
+      radial-gradient(circle, rgba(105,242,168,0.06) 0%, transparent 70%),
+      var(--void);
+  }
+  .radar::before{
+    content:"";
+    position:absolute; inset:0;
+    background:conic-gradient(from 0deg, rgba(105,242,168,0.55), transparent 35%);
+    animation:spin 1.6s linear infinite;
+  }
+  .radar::after{
+    content:"";
+    position:absolute; inset:0;
+    background:
+      repeating-radial-gradient(circle, transparent 0 14px, rgba(105,242,168,0.12) 14px 15px);
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #loadingText{
+    font-family:'Share Tech Mono', monospace;
+    font-size:12px;
+    letter-spacing:0.1em;
+    color:var(--dim);
+    min-height:16px;
+  }
+
+  /* RESULTS */
+  .results-console{padding:26px 28px;}
+  .primary-panel{
+    display:grid;
+    grid-template-columns:170px 1fr;
+    gap:24px;
+    align-items:center;
+    margin-bottom:22px;
+  }
+  @media (max-width:560px){
+    .primary-panel{grid-template-columns:1fr; justify-items:center; text-align:center;}
+  }
+  .gauge-wrap{text-align:center;}
+  .gauge-readout{
+    font-family:'Share Tech Mono', monospace;
+    font-size:28px;
+    color:var(--ecto);
+    margin-top:-38px;
+    text-shadow:0 0 12px rgba(105,242,168,0.5);
+  }
+  .gauge-label{
+    font-family:'Share Tech Mono', monospace;
+    font-size:10px;
+    letter-spacing:0.16em;
+    color:var(--dim);
+    margin-top:2px;
+  }
+  .primary-info .region{
+    font-family:'Cinzel', serif;
+    font-weight:700;
+    font-size:22px;
+    color:var(--parchment);
+    margin:0 0 4px;
+  }
+  .primary-info .country{
+    font-family:'Share Tech Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.14em;
+    color:var(--ecto);
+    text-transform:uppercase;
+    margin-bottom:10px;
+  }
+  .primary-info .origin-note{
+    font-size:16px;
+    line-height:1.5;
+    color:var(--parchment);
+    font-style:italic;
+  }
+  .map-wrap{
+    position:relative;
+    height:260px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    overflow:hidden;
+    margin-bottom:22px;
+  }
+  #map{height:100%; width:100%; filter:invert(92%) hue-rotate(180deg) brightness(0.92) contrast(0.95) saturate(0.7);}
+  .map-frame-label{
+    position:absolute; top:8px; left:10px;
+    font-family:'Share Tech Mono', monospace;
+    font-size:10px; letter-spacing:0.14em;
+    color:var(--ecto);
+    background:rgba(7,6,10,0.75);
+    padding:3px 8px; border-radius:4px;
+    z-index:400;
+    pointer-events:none;
+  }
+  .traits-block{margin-bottom:24px;}
+  .section-title{
+    font-family:'Share Tech Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.18em;
+    color:var(--dim);
+    text-transform:uppercase;
+    margin:0 0 12px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .section-title::after{
+    content:"";
+    flex:1;
+    height:1px;
+    background:var(--line);
+  }
+  .traits-list{
+    list-style:none; margin:0; padding:0;
+    display:grid; grid-template-columns:1fr 1fr; gap:10px;
+  }
+  @media (max-width:560px){.traits-list{grid-template-columns:1fr;}}
+  .traits-list li{
+    background:var(--void);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:10px 12px;
+    font-size:14px;
+    color:var(--parchment);
+  }
+  .traits-list li::before{content:"◆ "; color:var(--ecto); font-size:10px;}
+
+  .secondary-block{}
+  .secondary-item{
+    display:grid;
+    grid-template-columns:110px 1fr 46px;
+    align-items:center;
+    gap:12px;
+    padding:9px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .secondary-item:last-child{border-bottom:none;}
+  .secondary-region{
+    font-family:'Share Tech Mono', monospace;
+    font-size:12px;
+    color:var(--dim);
+  }
+  .secondary-note{
+    font-size:13px;
+    color:#c9bfe0;
+    font-style:italic;
+  }
+  .secondary-bar-track{
+    grid-column:1 / -1;
+    height:3px;
+    background:var(--void);
+    border-radius:2px;
+    overflow:hidden;
+    margin-top:2px;
+  }
+  .secondary-bar-fill{
+    height:100%;
+    background:var(--amber);
+  }
+  .secondary-pct{
+    font-family:'Share Tech Mono', monospace;
+    font-size:12px;
+    color:var(--amber);
+    text-align:right;
+  }
+  .rescan-row{
+    margin-top:24px;
+    text-align:center;
+  }
+  #rescanBtn{
+    font-family:'Share Tech Mono', monospace;
+    font-size:11px; letter-spacing:0.14em;
+    background:transparent; border:1px solid var(--line); color:var(--dim);
+    border-radius:6px; padding:9px 18px; cursor:pointer;
+  }
+  #rescanBtn:hover{color:var(--parchment); border-color:var(--dim);}
+
+  .error-console{
+    padding:40px 28px;
+    text-align:center;
+    color:var(--blood);
+    font-family:'Share Tech Mono', monospace;
+    font-size:13px;
+  }
+  .error-console button{
+    margin-top:14px;
+    font-family:'Share Tech Mono', monospace;
+    background:transparent; border:1px solid var(--blood); color:var(--blood);
+    border-radius:6px; padding:8px 18px; cursor:pointer;
+  }
+
+  footer.disclaimer{
+    max-width:760px;
+    margin:16px auto 0;
+    padding:0 8px;
+    font-family:'Share Tech Mono', monospace;
+    font-size:10px;
+    letter-spacing:0.04em;
+    line-height:1.6;
+    color:#544a70;
+    text-align:center;
+  }
+
+  /* pulsing marker */
+  .pulse-marker{position:relative; width:16px; height:16px;}
+  .pulse-marker .dot{
+    position:absolute; top:5px; left:5px; width:6px; height:6px;
+    background:var(--blood); border-radius:50%;
+    box-shadow:0 0 8px 2px var(--danger-glow);
+  }
+  .pulse-marker .ring{
+    position:absolute; inset:0;
+    border:2px solid var(--blood);
+    border-radius:50%;
+    animation:ping 1.8s cubic-bezier(0,0,0.2,1) infinite;
+  }
+  @keyframes ping{
+    0%{transform:scale(0.4); opacity:0.9;}
+    100%{transform:scale(2.4); opacity:0;}
+  }
+</style>
+</head>
+<body>
+
+<div class="device">
+  <div class="device-header">
+    <span class="brand-glyph">☠</span>
+    <h1>ECTOSCAN</h1>
+    <div class="brand-sub">Entity Origin Analyzer — Field Unit MK.III</div>
+  </div>
+
+  <div class="input-console">
+    <label for="ghostName">ENTITY DESIGNATION</label>
+    <div class="input-row">
+      <input id="ghostName" type="text" placeholder="Enter the name given..." autocomplete="off" />
+      <button id="scanBtn">SCAN</button>
+    </div>
+    <p class="hint">Input the name revealed by the entity during investigation.</p>
+  </div>
+
+  <div id="loadingConsole" class="loading-console hidden">
+    <div class="radar"></div>
+    <div id="loadingText">Calibrating ectoplasmic residue...</div>
+  </div>
+
+  <div id="errorConsole" class="error-console hidden">
+    <div id="errorText">SIGNAL LOST — unable to complete reading.</div>
+    <button id="retryBtn">RETRY SCAN</button>
+  </div>
+
+  <div id="resultsConsole" class="results-console hidden">
+    <div class="primary-panel">
+      <div class="gauge-wrap">
+        <svg viewBox="0 0 200 110" width="150">
+          <path d="M10,100 A90,90 0 0,1 190,100" fill="none" stroke="#241a38" stroke-width="14"/>
+          <path id="gaugeFill" d="M10,100 A90,90 0 0,1 190,100" fill="none" stroke="var(--ecto)" stroke-width="14" stroke-linecap="round" stroke-dasharray="283" stroke-dashoffset="283"/>
+          <line id="needle" x1="100" y1="100" x2="100" y2="25" stroke="#ece3d1" stroke-width="3" stroke-linecap="round" transform="rotate(-90 100 100)"/>
+          <circle cx="100" cy="100" r="6" fill="#ece3d1"/>
+        </svg>
+        <div class="gauge-readout" id="confidenceReadout">0%</div>
+        <div class="gauge-label">CONFIDENCE</div>
+      </div>
+      <div class="primary-info">
+        <p class="region" id="regionName">—</p>
+        <p class="country" id="countryName">—</p>
+        <p class="origin-note" id="originNote">—</p>
+      </div>
+    </div>
+
+    <div class="map-wrap">
+      <div class="map-frame-label">LOCATING SIGNAL SOURCE</div>
+      <div id="map"></div>
+    </div>
+
+    <div class="traits-block">
+      <p class="section-title">Cultural Readings</p>
+      <ul class="traits-list" id="traitsList"></ul>
+    </div>
+
+    <div class="secondary-block">
+      <p class="section-title">Secondary Signals</p>
+      <div id="secondaryList"></div>
+    </div>
+
+    <div class="rescan-row">
+      <button id="rescanBtn">RUN NEW SCAN</button>
+    </div>
+  </div>
+
+  <footer class="disclaimer" style="border-top:1px solid var(--line); padding:14px 28px 20px;">
+    CALIBRATION NOTICE — READINGS ARE AI-GENERATED FOR GAME ATMOSPHERE ONLY. NAMES DO NOT DETERMINE REAL IDENTITY, ETHNICITY, OR ORIGIN. FOR ENTERTAINMENT USE WITH "DEMONOLOGIST" ONLY.
+  </footer>
+</div>
+
+<script>
+const loadingLines = [
+  "Calibrating ectoplasmic residue...",
+  "Cross-referencing dialect echoes...",
+  "Triangulating spectral point of origin...",
+  "Parsing residual linguistic signature...",
+  "Filtering ambient EMF interference...",
+  "Comparing name resonance to regional archive..."
+];
+
+const ghostInput = document.getElementById('ghostName');
+const scanBtn = document.getElementById('scanBtn');
+const rescanBtn = document.getElementById('rescanBtn');
+const retryBtn = document.getElementById('retryBtn');
+const loadingConsole = document.getElementById('loadingConsole');
+const resultsConsole = document.getElementById('resultsConsole');
+const errorConsole = document.getElementById('errorConsole');
+const inputConsole = document.querySelector('.input-console');
+const loadingText = document.getElementById('loadingText');
+
+let map, marker;
+let loadingInterval;
+let lastName = '';
+
+function showOnly(el){
+  [loadingConsole, resultsConsole, errorConsole].forEach(e => e.classList.add('hidden'));
+  if(el) el.classList.remove('hidden');
+}
+
+function startLoadingCycle(){
+  let i = 0;
+  loadingText.textContent = loadingLines[0];
+  loadingInterval = setInterval(() => {
+    i = (i+1) % loadingLines.length;
+    loadingText.textContent = loadingLines[i];
+  }, 1000);
+}
+function stopLoadingCycle(){
+  clearInterval(loadingInterval);
+}
+
+function setGauge(confidence){
+  confidence = Math.max(0, Math.min(100, confidence));
+  const fill = document.getElementById('gaugeFill');
+  const needle = document.getElementById('needle');
+  const readout = document.getElementById('confidenceReadout');
+  const circumference = 283;
+  fill.setAttribute('stroke-dashoffset', circumference * (1 - confidence/100));
+  const color = confidence >= 66 ? 'var(--ecto)' : confidence >= 35 ? 'var(--amber)' : '#c0605f';
+  fill.setAttribute('stroke', color);
+  const angle = -90 + (confidence/100)*180;
+  needle.setAttribute('transform', `rotate(${angle} 100 100)`);
+  readout.textContent = confidence + '%';
+  readout.style.color = color;
+}
+
+function initMap(){
+  if(map) return;
+  map = L.map('map', {
+    zoomControl:false,
+    attributionControl:false,
+    scrollWheelZoom:true,
+  }).setView([20,0], 2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:18,
+  }).addTo(map);
+}
+
+function updateMap(lat, lng, label){
+  initMap();
+  const icon = L.divIcon({
+    className:'',
+    html:'<div class="pulse-marker"><div class="ring"></div><div class="dot"></div></div>',
+    iconSize:[16,16],
+    iconAnchor:[8,8]
+  });
+  if(marker) map.removeLayer(marker);
+  marker = L.marker([lat, lng], {icon}).addTo(map);
+  setTimeout(() => { map.invalidateSize(); map.flyTo([lat, lng], 5.2, {duration:1.6}); }, 150);
+}
+
+function renderResults(data){
+  const p = data.primary;
+  document.getElementById('regionName').textContent = p.region || '—';
+  document.getElementById('countryName').textContent = p.country || '';
+  document.getElementById('originNote').textContent = p.originNote || '';
+  setGauge(Math.round(p.confidence || 0));
+  updateMap(p.lat, p.lng, p.region);
+
+  const traitsList = document.getElementById('traitsList');
+  traitsList.innerHTML = '';
+  (p.traits || []).forEach(t => {
+    const li = document.createElement('li');
+    li.textContent = t;
+    traitsList.appendChild(li);
+  });
+
+  const secList = document.getElementById('secondaryList');
+  secList.innerHTML = '';
+  (data.secondary || []).forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'secondary-item';
+    row.innerHTML = `
+      <div class="secondary-region">${s.region}</div>
+      <div class="secondary-note">${s.note}</div>
+      <div class="secondary-pct">${Math.round(s.confidence)}%</div>
+      <div class="secondary-bar-track"><div class="secondary-bar-fill" style="width:${Math.round(s.confidence)}%"></div></div>
+    `;
+    secList.appendChild(row);
+  });
+
+  showOnly(resultsConsole);
+  setTimeout(() => map && map.invalidateSize(), 200);
+}
+
+async function runScan(name){
+  lastName = name;
+  showOnly(loadingConsole);
+  startLoadingCycle();
+
+  const systemPrompt = `You are an occult-tech analysis engine inside a spooky ghost-hunting party game called "Demonologist". Given a name, respond with ONLY a raw JSON object, no markdown fences, no preamble, matching exactly this schema:
+{
+  "primary": {
+    "region": string (a specific region, culture, or country name),
+    "country": string (short label, e.g. a country or broader area),
+    "lat": number,
+    "lng": number,
+    "confidence": integer between 0 and 100,
+    "originNote": string (1-2 sentences on the likely linguistic or cultural origin of the name),
+    "traits": array of exactly 4 short strings, each a well-known, respectful, general cultural custom, tradition, or feature associated with that region
+  },
+  "secondary": array of exactly 3 objects, each { "region": string, "confidence": integer 0-100, "note": string one-liner }, listed in descending confidence, each confidence lower than primary.confidence
+}
+Use real, plausible approximate latitude/longitude for the primary region's representative location. Keep all cultural content general and respectful, framed as flavor for a fictional game, never as a claim about any real individual.`;
+
+  try{
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1000,
+        system: systemPrompt,
+        messages: [
+          { role: "user", content: `Ghost name: ${name}` }
+        ],
+      })
+    });
+
+    if(!response.ok) throw new Error('Bad response: ' + response.status);
+    const data = await response.json();
+    const textBlocks = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
+    const cleaned = textBlocks.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+
+    stopLoadingCycle();
+    renderResults(parsed);
+  }catch(err){
+    console.error('ECTOSCAN error:', err);
+    stopLoadingCycle();
+    document.getElementById('errorText').textContent = 'SIGNAL LOST — the reading could not be completed. Try again.';
+    showOnly(errorConsole);
+  }
+}
+
+scanBtn.addEventListener('click', () => {
+  const name = ghostInput.value.trim();
+  if(!name) { ghostInput.focus(); return; }
+  runScan(name);
+});
+ghostInput.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter') scanBtn.click();
+});
+rescanBtn.addEventListener('click', () => {
+  showOnly(null);
+  ghostInput.value = '';
+  ghostInput.focus();
+});
+retryBtn.addEventListener('click', () => {
+  if(lastName) runScan(lastName);
+});
+</script>
+</body>
+</html>
